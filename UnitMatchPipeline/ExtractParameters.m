@@ -140,7 +140,7 @@ for uid = 1:nclus
     end
 
     % Extract channel positions that are relevant and extract mean location
-    [~,MaxChanneltmp] = nanmax(nanmax(abs(nanmean(spikeMap(35:70,:,:),3)),[],1));
+    [~,MaxChanneltmp] = nanmax(nanmax(abs(nanmean(spikeMap(param.waveidx,:,:),3)),[],1));
     OriChanIdx = find(cell2mat(arrayfun(@(Y) vecnorm(channelpos(MaxChanneltmp,:)-channelpos(Y,:)),1:size(channelpos,1),'UniformOutput',0))<param.TakeChannelRadius); %Averaging over 10 channels helps with drift
     OriLocs = channelpos(OriChanIdx,:);
 
@@ -150,7 +150,7 @@ for uid = 1:nclus
         ChanIdx = OriChanIdx;
         Locs = OriLocs;
         % Find maximum channels:
-        [~,MaxChannel(uid,cv)] = nanmax(nanmax(abs(spikeMap(35:70,ChanIdx,cv)),[],1)); %Only over relevant channels, in case there's other spikes happening elsewhere simultaneously
+        [~,MaxChannel(uid,cv)] = nanmax(nanmax(abs(spikeMap(param.waveidx,ChanIdx,cv)),[],1)); %Only over relevant channels, in case there's other spikes happening elsewhere simultaneously
         MaxChannel(uid,cv) = ChanIdx(MaxChannel(uid,cv));
 
 
@@ -316,13 +316,13 @@ if 0
     end
 
     % Extract channel positions that are relevant and extract mean location
-    [~,MaxChanneltmp] = nanmax(nanmax(abs(nanmean(spikeMap(35:70,:,:),3)),[],1));
+    [~,MaxChanneltmp] = nanmax(nanmax(abs(nanmean(spikeMap(param.waveidx,:,:),3)),[],1));
     ChanIdx = find(cell2mat(arrayfun(@(Y) norm(channelpos(MaxChanneltmp,:)-channelpos(Y,:)),1:size(channelpos,1),'UniformOutput',0))<param.TakeChannelRadius.*0.8); %Averaging over 10 channels helps with drift
     Locs = channelpos(ChanIdx,:,:);
 
     % Plot
     tmp = nanmean(spikeMap(:,ChanIdx(channelpos(ChanIdx,2)==0),:),3);
-    timevec = [-(param.NewPeakLoc-(1:size(spikeMap,1)))].*(1/30000)*1000; % In MS
+    timevec = [-(param.NewPeakLoc-(1:size(spikeMap,1)))].*(1/param.sample_rate)*1000; % In MS
     lims = [-150 150];
     figure;
     subplot(2,3,1)
@@ -373,12 +373,7 @@ if 0
 
     makepretty
 
-    subplot(2,3,6) % average waveform
-    tmp = nanmean(spikeMap(:,MaxChannel(uid,1),:),3);
-    plot(timevec,tmp,'k-')
-    xlabel('Time (ms)')
-    ylabel('\muV at peak channel')
-    makepretty
+
 
 
 
