@@ -35,7 +35,7 @@ function  [UniqueIDConversion, MatchTable, WaveformInfo, param] = UnitMatch(clus
 %% Parameters - tested on these values, but feel free to try others
 GlobalUnitMatchClock = tic;        
 Scores2Include = param.Scores2Include % Good to show for failure prevention
-TakeChannelRadius = 150; %in micron around max channel;
+TakeChannelRadius = 180; %in micron around max channel;
 maxdist = 100; % Maximum distance at which units are considered as potential matches %best tested so far 100
 param.removeoversplits = 0; % Remove oversplits based on ISI violations or not?
 param.MakeOwnNaiveBayes = 1; % if 0, use standard matlab version, which assumes normal distributions --> not recommended
@@ -52,10 +52,12 @@ stepsize = 0.01;
 Allchannelpos = param.AllChannelPos;
 RunPyKSChronicStitched = param.RunPyKSChronicStitched;
 SaveDir = param.SaveDir;
-param.nChannels = length(Allchannelpos{1})+1; %First assume there's a sync channel as well.
+param.nChannels = length(Allchannelpos{1});
 spikeWidth = param.spikeWidth; %83; % in sample space (time)
 NewPeakLoc = floor(spikeWidth./2); % This is where all peaks will be aligned to!
-waveidx = NewPeakLoc-7:NewPeakLoc+15; % Force this analysis window So far
+before_peak = 0.00023; % in seconds
+after_peak = 0.00050; % in seconds
+waveidx = NewPeakLoc-floor(before_peak*param.sample_rate):NewPeakLoc+floor(after_peak*param.sample_rate); % Force this analysis window So far
 % best option
 param.TakeChannelRadius = TakeChannelRadius;
 param.waveidx = waveidx;
@@ -101,7 +103,8 @@ SessionSwitch = [cell2mat(SessionSwitch); nclus+1];
 %% Extract raw waveforms
 % This script does the actual extraction (if necessary) and saves out paths
 % to NPY for individual unit data
-Path4UnitNPY = ExtractAndSaveAverageWaveforms(clusinfo,param);
+% Path4UnitNPY = ExtractAndSaveAverageWaveforms(clusinfo,param);
+Path4UnitNPY = extract_avg_waveforms(param);
 
 %% Extract parameters used in UnitMatch
 [AllWVBParameters,param] = ExtractParameters(Path4UnitNPY,clusinfo,param);
