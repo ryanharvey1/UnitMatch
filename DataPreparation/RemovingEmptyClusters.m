@@ -4,7 +4,7 @@ function   [clusinfo, sp, emptyclus] = RemovingEmptyClusters(clusinfo,sp)
 % Convert sp data accordingly
 
 % Initialize new vectors
-nclus = length(clusinfo.cluster_id);
+nclus = length(clusinfo.id);
 temps = nan(nclus,size(sp.temps,2),size(sp.temps,3));
 pcFeatInd = nan(nclus,size(sp.pcFeatInd,2));
 templateDepths = nan(nclus,1);
@@ -16,7 +16,7 @@ waveforms = nan(nclus,size(sp.waveforms,2));
 
 emptyclus = [];
 for clusid=1:nclus
-    oriclusid = unique(sp.spikeTemplates(find(sp.clu == clusid-1))); %0-indexed!
+    oriclusid = mode(sp.spikeTemplates(find(sp.clu == clusid-1))); %0-indexed!
     if isempty(oriclusid)
         emptyclus = [emptyclus clusid];
     elseif length(oriclusid)==1
@@ -56,20 +56,7 @@ end
 %% Remove the empty clusters
 fields = fieldnames(clusinfo);
 for id = 1:length(fields)
-    eval(['clusinfo.' fields{id} '(emptyclus)=[];'])
-    %cluster_id(emptyclus)=[];
-%     clusinfo.Amplitude(emptyclus)=[];
-%     clusinfo.ContamPct(emptyclus)=[];
-%     clusinfo.KSLabel(emptyclus,:)=[];
-%     clusinfo.amp(emptyclus)=[];
-%     clusinfo.ch(emptyclus)=[];
-% 
-%     clusinfo.depth(emptyclus)=[];
-%     clusinfo.fr(emptyclus)=[];
-%     clusinfo.group(emptyclus,:)=[];
-%     clusinfo.n_spikes(emptyclus)=[];
-%     clusinfo.sh(emptyclus)=[];
-
+    clusinfo.(fields{id})(emptyclus) = [];
 end
 
 
