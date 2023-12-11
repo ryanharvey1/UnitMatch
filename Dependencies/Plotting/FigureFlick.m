@@ -22,6 +22,7 @@ function FigureFlick(UMDir,user,recompute, loadMATsToSave)
         [ret,user] = system('hostname');%'default';
         user = (user(1:end-1));
     end
+    user = user(isstrprop(user,'alpha'));
 
     if ~exist('recompute','var')
         recompute = 0;
@@ -38,6 +39,7 @@ function FigureFlick(UMDir,user,recompute, loadMATsToSave)
     MatchTable = TmpFile.MatchTable;
 
     if ~any(ismember(MatchTable.Properties.VariableNames,user))
+        % MatchTable.(user) = zeros(height(MatchTable),1);
         eval(['MatchTable.' user ' = zeros(height(MatchTable),1);'])
     end
 
