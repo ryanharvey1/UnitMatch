@@ -1,4 +1,4 @@
-function UMparam = DefaultParametersUnitMatch(UMparam)
+function UMparam = DefaultParametersUnitMatch(UMparam,session)
 % Checks if all required parameters are there, and will fill in default
 % parameters if not wherever possible
 %% Check if path information is given
@@ -6,9 +6,9 @@ if ~isfield(UMparam,'SaveDir')
     disp('Warning, no SaveDir given. Assigning current directory')
     UMparam.SaveDir = fullfile(cd,'UnitMatch');
 end
-if ~isfield(UMparam,'KSDir')
-    error('Error, no directories provided with sorted data and/or raw waveforms')
-end
+% if ~isfield(UMparam,'KSDir')
+%     error('Error, no directories provided with sorted data and/or raw waveforms')
+% end
 
 if ~isfield(UMparam,'RawDataPaths')
     warning('No RawDataPaths given... if raw waveforms are already extracted this may not be a problem')
@@ -29,8 +29,12 @@ end
 if ~isfield(UMparam,'sampleamount')
     UMparam.sampleamount = 1000; % n raw waveforms to extract
 end
+if ~isfield(UMparam,'sample_rate')
+    UMparam.sample_rate = session.extracellular.sr;
+end
 if ~isfield(UMparam,'spikeWidth')
-    UMparam.spikeWidth = 82; % width of spikes in samples (typically assuming 30KhZ sampling)
+    UMparam.spikeWidth_sec = 0.0028; % width of spikes in seconds
+    UMparam.spikeWidth = floor(UMparam.spikeWidth_sec * session.extracellular.sr); % width of spikes in samples (typically 83 assuming 30KhZ sampling)
 end
 if ~isfield(UMparam,'RedoExtraction')
     UMparam.RedoExtraction = 0; % Redoing raw average spike extraction --> this is time consuming
