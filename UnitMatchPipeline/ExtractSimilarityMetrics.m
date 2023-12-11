@@ -231,6 +231,7 @@ for uid = 1:nclus
     AllowFlipping(cell2mat(arrayfun(@(X) length(unique(Locs(:,X))),1:size(Locs,2),'Uni',0))<=2 & cell2mat(arrayfun(@(X) length(unique(Locs(:,X))),1:size(Locs,2),'Uni',0))>1,:) = true;
 end
 FlipDim = find(any(AllowFlipping,2));
+FlipDim = 2;
 % Housekeeping
 clear AllowFlipping
 clear AllchannelCoord
