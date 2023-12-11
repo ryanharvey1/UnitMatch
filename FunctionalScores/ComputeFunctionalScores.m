@@ -22,6 +22,10 @@ if UMparam.GoodUnitsOnly
 else
     GoodId = true(1, length(UniqueIDConversion.GoodID));
 end
+[r,c]=size(GoodId);
+if r > c
+    GoodId = GoodId';
+end
 UniqueID = UniqueIDConversion.UniqueID(GoodId);
 OriID = UniqueIDConversion.OriginalClusID(GoodId);
 OriIDAll = UniqueIDConversion.OriginalClusID;
@@ -43,7 +47,37 @@ end
 
 % Load SP
 disp('Loading spike information...')
-sp = getSpikesFromPrepData(AllKSDir);
+% sp = getSpikesFromPrepData(AllKSDir);
+nKSFiles = length(AllKSDir);
+spAll = cell(1, nKSFiles);
+for basepath_i = 1:length(AllKSDir)
+    basepath = AllKSDir{basepath_i};
+    load(fullfile(basepath,[basenameFromBasepath(basepath),'.spikes.cellinfo.mat']),'spikes')
+    % spikes,st = importSpikes('basepath',basepath)
+    spAll{basepath_i}.st = spikes.spindices(:,1);
+    spAll{basepath_i}.RecSes = ones(length(spikes.spindices(:,1)),1) * basepath_i;
+    spAll{basepath_i}.spikeTemplates = spikes.spindices(:,2);
+end
+% Add all spikedata in one spikes struct - can be used for further analysis
+spAll = [spAll{:}];
+spnew = struct;
+fields = fieldnames(spAll(1));
+for fieldid = 1:length(fields)
+    try
+        spnew.(fields{fieldid}) = cat(1,spAll(:).(fields{fieldid}));
+    catch ME
+        if strcmp(ME.message, 'Out of memory.')
+            spnew.(fields{fieldid}) = cat(1,spAll(1).(fields{fieldid}));
+            for tmpid = 2:length(spAll)
+                spnew.(fields{fieldid}) = cat(1,spnew.(fields{fieldid}),spAll(tmpid).(fields{fieldid}));
+            end
+        else
+            spnew.(fields{fieldid}) = cat(1,spAll(:).(fields{fieldid}));
+            eval(['spnew.', fields{fieldid}, '= cat(2,sp(:).', fields{fieldid}, ');'])
+        end
+    end
+end
+sp = spnew;
 
 nRec = length(unique(UniqueIDConversion.recsesAll(logical(UniqueIDConversion.GoodID))));
 RecOpt = unique(UniqueIDConversion.recsesAll(logical(UniqueIDConversion.GoodID)));
@@ -248,152 +282,152 @@ end
 
 %% Get natural images fingerprints correlations
 
-if ~any(ismember(MatchTable.Properties.VariableNames, 'natImRespCorr')) || recompute % If it already exists in table, skip this entire thing
-    % Param for processing
-    proc.window = [-0.3 0.5 ... % around onset
-        0.0 0.5]; % around offset
-    proc.binSize = 0.005; % in ms
-    proc.smoothSize = 5; % PSTH smoothing filter
-    gw = gausswin(proc.smoothSize,3);
-    proc.smWin = gw./sum(gw);
-
-    binsOn = (proc.window(1)+proc.binSize/2):proc.binSize:proc.window(2);
-    binsOff =  proc.window(2)+((proc.binSize/2):proc.binSize:(proc.window(4)-proc.window(3)));
-    bins = [binsOn binsOff];
-
-    nRec = length(RecOpt); % not always the same!! numel(UMparam.AllRawPaths);
-    nClu = nan(1,nRec); for ss = 1:nRec; nClu(ss) = numel(unique(MatchTable.ID1(MatchTable.RecSes1 == RecOpt(ss)))); end
-    spikeData_cv = cell(2,nRec);
-    for ss = 1:nRec
-        % Get the original binFile (also for stitched?)
-        Flag = 1;
-        if ~isempty(UMparam.AllRawPaths{RecOpt(ss)}) % When no raw data is available
-            if iscell(UMparam.AllRawPaths{RecOpt(ss)})
-                binFileRef = fullfile(UMparam.AllRawPaths{RecOpt(ss)});
-            else
-                binFileRef = fullfile(UMparam.AllRawPaths{RecOpt(ss)}.folder,UMparam.AllRawPaths{RecOpt(ss)}.name);
-            end
-        else
-            Flag = 0;
-        end
-
-        % Find the associated experiments
-        if ispc && Flag
-            exp2keep = getNatImExpRef(binFileRef);
-        else
-            exp2keep = [];
-            % Julie Fabre: on linux the servers are mounted differently, and the above
-            % function needs to be substantially changed to work. Since I
-            % don't need to run it, just added an "ispc" flag.
-        end
-
-        if ~isempty(exp2keep)
-            % Get the spikes
-            st = sp.st(sp.RecSes == RecOpt(ss));
-            clu = sp.spikeTemplates(sp.RecSes == RecOpt(ss));
-
-            spikesAll.times = st;
-            spikesAll.clusters = clu;
-            spikesAll.clusterIDs = unique(clu); % follow the same units across days
-
-            % Get the natIm responses
-            spikeData = getNatImResp(spikesAll,exp2keep,binFileRef,proc);
-            clusterIDs = spikesAll.clusterIDs;
-
-            % Split in two halves and subselect units
-            cluIdx = ismember(clusterIDs,unique(MatchTable.ID1(MatchTable.RecSes1 == RecOpt(ss))));
-            spikeData_cv{1,ss} = spikeData(:,:,cluIdx,1:2:end); % odd
-            spikeData_cv{2,ss} = spikeData(:,:,cluIdx,2:2:end); % even
-        end
-    end
-
-
-    % ---
-    % Second fingerprint with mean response to NI + temporal responses
-    corrMeanResp_big = nan(sum(nClu),sum(nClu));
-    corrTimecourse_big = nan(sum(nClu),sum(nClu));
-    for ss1 = 1:nRec
-        if ~isempty(spikeData_cv{1,ss1})
-            meanResp1 = zscore(squeeze(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>0,:,:),[2 4])));
-            timecourse1 = zscore(squeeze(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4])));
-            for ss2 = 1:nRec
-                if ~isempty(spikeData_cv{2,ss2})
-                    meanResp2 = zscore(squeeze(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>0,:,:),[2 4])));
-                    timecourse2 = zscore(squeeze(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4])));
-                    corrMeanResp_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(meanResp1,meanResp2);
-                    corrTimecourse_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(timecourse1, timecourse2);
-                end
-            end
-        end
-    end
-    corrResp_big = tanh(.5*atanh(corrMeanResp_big) + .5*atanh(corrTimecourse_big));
-
-    corrResp_big = tanh(.5*atanh(corrResp_big) + .5*atanh(corrResp_big')); % not sure that's needed?
-
-    % Get rank
-    [natImRespRank, natImRespSig] = getRank(corrResp_big, SessionSwitch);
-    
-    % Save in table
-    MatchTable.natImRespCorr = corrResp_big(:);
-    MatchTable.natImRespRank = natImRespRank(:);
-    MatchTable.natImRespSig = natImRespSig(:);
-
-%     % ---
-%     % Second fingerprint with CCA
-%     
-%     % Perform CCA across recordings
-%     [corrMat, ~] = computeNatImCorr(spikeData_cv(:)); % default 75
-%     % [corrMat, ~] = computeNatImCorr(spikeData_cv(:), 1:ceil(sqrt(size(spikeData_cv{1},1)*size(spikeData_cv{1},2))/2));
+% if ~any(ismember(MatchTable.Properties.VariableNames, 'natImRespCorr')) || recompute % If it already exists in table, skip this entire thing
+%     % Param for processing
+%     proc.window = [-0.3 0.5 ... % around onset
+%         0.0 0.5]; % around offset
+%     proc.binSize = 0.005; % in ms
+%     proc.smoothSize = 5; % PSTH smoothing filter
+%     gw = gausswin(proc.smoothSize,3);
+%     proc.smWin = gw./sum(gw);
 % 
-%     % Reshape the matrix to a single one with correct clusters
-%     corrWCCA_big = nan(sum(nClu),sum(nClu));
-%     corrWCCA_1x2 = corrMat(1:2:end, 2:2:end);
-%     for ss1 = 1:nRec
-%         for ss2 = 1:nRec
-%             if ~all(isnan(corrWCCA_1x2{ss1,ss2}(:)))
-%                 corrWCCA_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corrWCCA_1x2{ss1,ss2};
+%     binsOn = (proc.window(1)+proc.binSize/2):proc.binSize:proc.window(2);
+%     binsOff =  proc.window(2)+((proc.binSize/2):proc.binSize:(proc.window(4)-proc.window(3)));
+%     bins = [binsOn binsOff];
+% 
+%     nRec = length(RecOpt); % not always the same!! numel(UMparam.AllRawPaths);
+%     nClu = nan(1,nRec); for ss = 1:nRec; nClu(ss) = numel(unique(MatchTable.ID1(MatchTable.RecSes1 == RecOpt(ss)))); end
+%     spikeData_cv = cell(2,nRec);
+%     for ss = 1:nRec
+%         % Get the original binFile (also for stitched?)
+%         Flag = 1;
+%         if ~isempty(UMparam.AllRawPaths{RecOpt(ss)}) % When no raw data is available
+%             if iscell(UMparam.AllRawPaths{RecOpt(ss)})
+%                 binFileRef = fullfile(UMparam.AllRawPaths{RecOpt(ss)});
+%             else
+%                 binFileRef = fullfile(UMparam.AllRawPaths{RecOpt(ss)}.folder,UMparam.AllRawPaths{RecOpt(ss)}.name);
 %             end
+%         else
+%             Flag = 0;
+%         end
+% 
+%         % Find the associated experiments
+%         if ispc && Flag
+%             exp2keep = getNatImExpRef(binFileRef);
+%         else
+%             exp2keep = [];
+%             % Julie Fabre: on linux the servers are mounted differently, and the above
+%             % function needs to be substantially changed to work. Since I
+%             % don't need to run it, just added an "ispc" flag.
+%         end
+% 
+%         if ~isempty(exp2keep)
+%             % Get the spikes
+%             st = sp.st(sp.RecSes == RecOpt(ss));
+%             clu = sp.spikeTemplates(sp.RecSes == RecOpt(ss));
+% 
+%             spikesAll.times = st;
+%             spikesAll.clusters = clu;
+%             spikesAll.clusterIDs = unique(clu); % follow the same units across days
+% 
+%             % Get the natIm responses
+%             spikeData = getNatImResp(spikesAll,exp2keep,binFileRef,proc);
+%             clusterIDs = spikesAll.clusterIDs;
+% 
+%             % Split in two halves and subselect units
+%             cluIdx = ismember(clusterIDs,unique(MatchTable.ID1(MatchTable.RecSes1 == RecOpt(ss))));
+%             spikeData_cv{1,ss} = spikeData(:,:,cluIdx,1:2:end); % odd
+%             spikeData_cv{2,ss} = spikeData(:,:,cluIdx,2:2:end); % even
 %         end
 %     end
-%     corrWCCA_big = tanh(.5*atanh(corrWCCA_big) + .5*atanh(corrWCCA_big')); % not sure that's needed?
 % 
-%     % Get rank
-%     [natImRank, natImSig] = getRank(corrWCCA_big, SessionSwitch);
-%     
-%     % Save in table
-%     MatchTable.natImCorr = corrWCCA_big(:);
-%     MatchTable.natImRank = natImRank(:);
-%     MatchTable.natImSig = natImSig(:);
-%
+% 
 %     % ---
-%     % Third fingerprint with scaled response
-%     corrScaledResp_big = nan(sum(nClu),sum(nClu));
+%     % Second fingerprint with mean response to NI + temporal responses
+%     corrMeanResp_big = nan(sum(nClu),sum(nClu));
+%     corrTimecourse_big = nan(sum(nClu),sum(nClu));
 %     for ss1 = 1:nRec
 %         if ~isempty(spikeData_cv{1,ss1})
-%             mat1 = nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),4);
-%             timecourse1 = zscore(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4]));
-%             scaledResp1 = squeeze(sum(mat1.*timecourse1,2));
+%             meanResp1 = zscore(squeeze(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>0,:,:),[2 4])));
+%             timecourse1 = zscore(squeeze(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4])));
 %             for ss2 = 1:nRec
 %                 if ~isempty(spikeData_cv{2,ss2})
-%                     mat2 = nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),4);
-%                     timecourse2 = zscore(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4]));
-%                     scaledResp2 = squeeze(sum(mat2.*timecourse2,2));
-%                     corrScaledResp_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(scaledResp1,scaledResp2);
+%                     meanResp2 = zscore(squeeze(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>0,:,:),[2 4])));
+%                     timecourse2 = zscore(squeeze(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4])));
+%                     corrMeanResp_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(meanResp1,meanResp2);
+%                     corrTimecourse_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(timecourse1, timecourse2);
 %                 end
 %             end
 %         end
 %     end
-%     corrScaledResp_big = tanh(.5*atanh(corrScaledResp_big) + .5*atanh(corrTimecourse_big));
-%     corrScaledResp_big = tanh(.5*atanh(corrScaledResp_big) + .5*atanh(corrScaledResp_big')); % not sure that's needed?
+%     corrResp_big = tanh(.5*atanh(corrMeanResp_big) + .5*atanh(corrTimecourse_big));
+% 
+%     corrResp_big = tanh(.5*atanh(corrResp_big) + .5*atanh(corrResp_big')); % not sure that's needed?
 % 
 %     % Get rank
-%     [natImScaledRespRank, natImScaledRespSig] = getRank(corrScaledResp_big, SessionSwitch);
+%     [natImRespRank, natImRespSig] = getRank(corrResp_big, SessionSwitch);
 % 
 %     % Save in table
-%     MatchTable.natImScaledRespCorr = corrScaledResp_big(:);
-%     MatchTable.natImScaledRespRank = natImScaledRespRank(:);
-%     MatchTable.natImScaledRespSig = natImScaledRespSig(:);
-end
+%     MatchTable.natImRespCorr = corrResp_big(:);
+%     MatchTable.natImRespRank = natImRespRank(:);
+%     MatchTable.natImRespSig = natImRespSig(:);
+% 
+% %     % ---
+% %     % Second fingerprint with CCA
+% %     
+% %     % Perform CCA across recordings
+% %     [corrMat, ~] = computeNatImCorr(spikeData_cv(:)); % default 75
+% %     % [corrMat, ~] = computeNatImCorr(spikeData_cv(:), 1:ceil(sqrt(size(spikeData_cv{1},1)*size(spikeData_cv{1},2))/2));
+% % 
+% %     % Reshape the matrix to a single one with correct clusters
+% %     corrWCCA_big = nan(sum(nClu),sum(nClu));
+% %     corrWCCA_1x2 = corrMat(1:2:end, 2:2:end);
+% %     for ss1 = 1:nRec
+% %         for ss2 = 1:nRec
+% %             if ~all(isnan(corrWCCA_1x2{ss1,ss2}(:)))
+% %                 corrWCCA_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corrWCCA_1x2{ss1,ss2};
+% %             end
+% %         end
+% %     end
+% %     corrWCCA_big = tanh(.5*atanh(corrWCCA_big) + .5*atanh(corrWCCA_big')); % not sure that's needed?
+% % 
+% %     % Get rank
+% %     [natImRank, natImSig] = getRank(corrWCCA_big, SessionSwitch);
+% %     
+% %     % Save in table
+% %     MatchTable.natImCorr = corrWCCA_big(:);
+% %     MatchTable.natImRank = natImRank(:);
+% %     MatchTable.natImSig = natImSig(:);
+% %
+% %     % ---
+% %     % Third fingerprint with scaled response
+% %     corrScaledResp_big = nan(sum(nClu),sum(nClu));
+% %     for ss1 = 1:nRec
+% %         if ~isempty(spikeData_cv{1,ss1})
+% %             mat1 = nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),4);
+% %             timecourse1 = zscore(nanmean(spikeData_cv{1,ss1}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4]));
+% %             scaledResp1 = squeeze(sum(mat1.*timecourse1,2));
+% %             for ss2 = 1:nRec
+% %                 if ~isempty(spikeData_cv{2,ss2})
+% %                     mat2 = nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),4);
+% %                     timecourse2 = zscore(nanmean(spikeData_cv{2,ss2}(:,bins<proc.window(2)+0.2 & bins>-0.2,:,:),[1 4]));
+% %                     scaledResp2 = squeeze(sum(mat2.*timecourse2,2));
+% %                     corrScaledResp_big(sum(nClu(1:ss1-1))+1:sum(nClu(1:ss1)), sum(nClu(1:ss2-1))+1:sum(nClu(1:ss2))) = corr(scaledResp1,scaledResp2);
+% %                 end
+% %             end
+% %         end
+% %     end
+% %     corrScaledResp_big = tanh(.5*atanh(corrScaledResp_big) + .5*atanh(corrTimecourse_big));
+% %     corrScaledResp_big = tanh(.5*atanh(corrScaledResp_big) + .5*atanh(corrScaledResp_big')); % not sure that's needed?
+% % 
+% %     % Get rank
+% %     [natImScaledRespRank, natImScaledRespSig] = getRank(corrScaledResp_big, SessionSwitch);
+% % 
+% %     % Save in table
+% %     MatchTable.natImScaledRespCorr = corrScaledResp_big(:);
+% %     MatchTable.natImScaledRespRank = natImScaledRespRank(:);
+% %     MatchTable.natImScaledRespSig = natImScaledRespSig(:);
+% end
 %% Write to table
 
 save(fullfile(SaveDir, 'UnitMatch.mat'), 'MatchTable', 'UMparam', 'UniqueIDConversion', '-append');
@@ -617,85 +651,85 @@ for id = 1:ntimes
 
     %% Plot Natural images
 
-    natImRespCorr = reshape(MatchTable.natImRespCorr, nclus, nclus);
-    if saveFig
-        subplot(4, 3, 10)
-        imagesc(natImRespCorr)
-        hold on
-        colormap(flipud(gray))
-        makepretty
-        xlabel('Unit_i')
-        ylabel('Unit_j')
-        hold on
-        arrayfun(@(X) line([SessionSwitch(X), SessionSwitch(X)], get(gca, 'ylim'), 'color', [1, 0, 0]), 2:length(SessionSwitch), 'Uni', 0)
-        arrayfun(@(X) line(get(gca, 'xlim'), [SessionSwitch(X), SessionSwitch(X)], 'color', [1, 0, 0]), 2:length(SessionSwitch), 'Uni', 0)
-        title('natIm Fingerprint')
-        axis square
-        freezeColors
-
-
-        if ~all(isnan(natImRespCorr(MatchIdx)))
-            subplot(4, 3, 11)
-            bins = min(natImRespCorr(:)):0.1:max(natImRespCorr(:));
-            Vector = [bins(1) + 0.1 / 2:0.1:bins(end) - 0.1 / 2];
-            hw = histcounts(natImRespCorr(WithinIdx), bins) ./ length(WithinIdx);
-            hm = histcounts(natImRespCorr(MatchIdx), bins) ./ length(MatchIdx);
-            hn = histcounts(natImRespCorr(NonMatchIdx), bins) ./ length(NonMatchIdx);
-            plot(Vector, hw, 'color', [0.5, 0.5, 0.5])
-            hold on
-            plot(Vector, hm, 'color', [0, 0.5, 0])
-            plot(Vector, hn, 'color', [0, 0, 0])
-            xlabel('natIm Fingerprint')
-            ylabel('Proportion|Group')
-            %         legend('i=j; within recording', 'matches', 'non-matches', 'Location', 'best')
-            axis square
-            makepretty
-
-            subplot(4, 3, 11)
-            bins = min(natImRespCorr(:)):0.1:max(natImRespCorr(:));
-            Vector = [bins(1) + 0.1 / 2:0.1:bins(end) - 0.1 / 2];
-            hw = histcounts(natImRespCorr(WithinIdx), bins) ./ length(WithinIdx);
-            hm = histcounts(natImRespCorr(MatchIdx), bins) ./ length(MatchIdx);
-            hn = histcounts(natImRespCorr(NonMatchIdx), bins) ./ length(NonMatchIdx);
-            plot(Vector, hw, 'color', [0.5, 0.5, 0.5])
-            hold on
-            plot(Vector, hm, 'color', [0, 0.5, 0])
-            plot(Vector, hn, 'color', [0, 0, 0])
-            xlabel('natIm Fingerprint')
-            ylabel('Proportion|Group')
-            %         legend('i=j; within recording', 'matches', 'non-matches', 'Location', 'best')
-            axis square
-            makepretty
-            subplot(4, 3, 12)
-            if any(MatchIdx) && ~all(isnan(natImRespCorr(MatchIdx)))
-                labels = [ones(1, numel(MatchIdx)), zeros(1, numel(NonMatchIdx))];
-                scores = [natImRespCorr(MatchIdx)', natImRespCorr(NonMatchIdx)'];
-
-                [X, Y, ~, AUC1] = perfcurve(labels, scores, 1);
-                h(1) = plot(X, Y, 'color', [0, 0.25, 0]);
-                hold all
-                labels = [zeros(1, numel(MatchIdx)), ones(1, numel(WithinIdx))];
-
-                scores = [natImRespCorr(MatchIdx)', natImRespCorr(WithinIdx)'];
-                [X, Y, ~, AUC2] = perfcurve(labels, scores, 1);
-                h(2) = plot(X, Y, 'color', [0, 0.5, 0]);
-            end
-
-            labels = [ones(1, numel(WithinIdx)), zeros(1, numel(NonMatchIdx))];
-            scores = [natImRespCorr(WithinIdx)', natImRespCorr(NonMatchIdx)'];
-            [X, Y, ~, AUC3] = perfcurve(labels, scores, 1);
-            h(3) = plot(X, Y, 'color', [0.25, 0.25, 0.25]);
-            axis square
-
-            plot([0, 1], [0, 1], 'k--')
-            xlabel('False positive rate')
-            ylabel('True positive rate')
-            %         legend([h(:)], 'Match vs No Match', 'Match vs Within', 'Within vs No Match', 'Location', 'best')
-            title(sprintf('natIm Fingerprint AUC: %.3f, %.3f, %.3f', AUC1, AUC2, AUC3))
-            makepretty
-            drawnow %Something to look at while ACG calculations are ongoing
-        end
-    end
+    % natImRespCorr = reshape(MatchTable.natImRespCorr, nclus, nclus);
+    % if saveFig
+    %     subplot(4, 3, 10)
+    %     imagesc(natImRespCorr)
+    %     hold on
+    %     colormap(flipud(gray))
+    %     makepretty
+    %     xlabel('Unit_i')
+    %     ylabel('Unit_j')
+    %     hold on
+    %     arrayfun(@(X) line([SessionSwitch(X), SessionSwitch(X)], get(gca, 'ylim'), 'color', [1, 0, 0]), 2:length(SessionSwitch), 'Uni', 0)
+    %     arrayfun(@(X) line(get(gca, 'xlim'), [SessionSwitch(X), SessionSwitch(X)], 'color', [1, 0, 0]), 2:length(SessionSwitch), 'Uni', 0)
+    %     title('natIm Fingerprint')
+    %     axis square
+    %     freezeColors
+    % 
+    % 
+    %     if ~all(isnan(natImRespCorr(MatchIdx)))
+    %         subplot(4, 3, 11)
+    %         bins = min(natImRespCorr(:)):0.1:max(natImRespCorr(:));
+    %         Vector = [bins(1) + 0.1 / 2:0.1:bins(end) - 0.1 / 2];
+    %         hw = histcounts(natImRespCorr(WithinIdx), bins) ./ length(WithinIdx);
+    %         hm = histcounts(natImRespCorr(MatchIdx), bins) ./ length(MatchIdx);
+    %         hn = histcounts(natImRespCorr(NonMatchIdx), bins) ./ length(NonMatchIdx);
+    %         plot(Vector, hw, 'color', [0.5, 0.5, 0.5])
+    %         hold on
+    %         plot(Vector, hm, 'color', [0, 0.5, 0])
+    %         plot(Vector, hn, 'color', [0, 0, 0])
+    %         xlabel('natIm Fingerprint')
+    %         ylabel('Proportion|Group')
+    %         %         legend('i=j; within recording', 'matches', 'non-matches', 'Location', 'best')
+    %         axis square
+    %         makepretty
+    % 
+    %         subplot(4, 3, 11)
+    %         bins = min(natImRespCorr(:)):0.1:max(natImRespCorr(:));
+    %         Vector = [bins(1) + 0.1 / 2:0.1:bins(end) - 0.1 / 2];
+    %         hw = histcounts(natImRespCorr(WithinIdx), bins) ./ length(WithinIdx);
+    %         hm = histcounts(natImRespCorr(MatchIdx), bins) ./ length(MatchIdx);
+    %         hn = histcounts(natImRespCorr(NonMatchIdx), bins) ./ length(NonMatchIdx);
+    %         plot(Vector, hw, 'color', [0.5, 0.5, 0.5])
+    %         hold on
+    %         plot(Vector, hm, 'color', [0, 0.5, 0])
+    %         plot(Vector, hn, 'color', [0, 0, 0])
+    %         xlabel('natIm Fingerprint')
+    %         ylabel('Proportion|Group')
+    %         %         legend('i=j; within recording', 'matches', 'non-matches', 'Location', 'best')
+    %         axis square
+    %         makepretty
+    %         subplot(4, 3, 12)
+    %         if any(MatchIdx) && ~all(isnan(natImRespCorr(MatchIdx)))
+    %             labels = [ones(1, numel(MatchIdx)), zeros(1, numel(NonMatchIdx))];
+    %             scores = [natImRespCorr(MatchIdx)', natImRespCorr(NonMatchIdx)'];
+    % 
+    %             [X, Y, ~, AUC1] = perfcurve(labels, scores, 1);
+    %             h(1) = plot(X, Y, 'color', [0, 0.25, 0]);
+    %             hold all
+    %             labels = [zeros(1, numel(MatchIdx)), ones(1, numel(WithinIdx))];
+    % 
+    %             scores = [natImRespCorr(MatchIdx)', natImRespCorr(WithinIdx)'];
+    %             [X, Y, ~, AUC2] = perfcurve(labels, scores, 1);
+    %             h(2) = plot(X, Y, 'color', [0, 0.5, 0]);
+    %         end
+    % 
+    %         labels = [ones(1, numel(WithinIdx)), zeros(1, numel(NonMatchIdx))];
+    %         scores = [natImRespCorr(WithinIdx)', natImRespCorr(NonMatchIdx)'];
+    %         [X, Y, ~, AUC3] = perfcurve(labels, scores, 1);
+    %         h(3) = plot(X, Y, 'color', [0.25, 0.25, 0.25]);
+    %         axis square
+    % 
+    %         plot([0, 1], [0, 1], 'k--')
+    %         xlabel('False positive rate')
+    %         ylabel('True positive rate')
+    %         %         legend([h(:)], 'Match vs No Match', 'Match vs Within', 'Within vs No Match', 'Location', 'best')
+    %         title(sprintf('natIm Fingerprint AUC: %.3f, %.3f, %.3f', AUC1, AUC2, AUC3))
+    %         makepretty
+    %         drawnow %Something to look at while ACG calculations are ongoing
+    %     end
+    % end
 
     %% save
     set(gcf, 'units', 'normalized', 'outerposition', [0, 0, 1, 1])
