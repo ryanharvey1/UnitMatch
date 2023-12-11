@@ -13,7 +13,8 @@ for midx = 1:length(MiceOpt)
     %% Loading data from kilosort/phy easily
     if ~isempty(KilosortDir)
         myKsDir = fullfile(KilosortDir,MiceOpt{midx});
-        subksdirs = dir(fullfile(myKsDir,'**','Probe*')); %This changed because now I suddenly had 2 probes per recording
+        % subksdirs = dir(fullfile(myKsDir,'**','Probe*')); %This changed because now I suddenly had 2 probes per recording
+        subksdirs = []
         if length(subksdirs)<1
             clear subksdirs
             subksdirs.folder = myKsDir; %Should be a struct array
