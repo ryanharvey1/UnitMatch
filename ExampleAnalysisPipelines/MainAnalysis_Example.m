@@ -2,33 +2,33 @@
 
 %% User Input
 %% Path information
-DataDir = {'H:\MatchingUnits\RawData'}; %{'H:\MatchingUnits\RawDataMonthApart'};% ;%Raw data folders, typically servers were e.g. *.cbin files are stored
-SaveDir = 'H:\MatchingUnits\Output\Concatenated1Day'; %'\\znas.cortexlab.net\Lab\Share\UNITMATCHTABLES_ENNY_CELIAN_JULIE\2ConsecutiveDays\Stitched';%'\\znas.cortexlab.net\Lab\Share\UNITMATCHTABLES_ENNY_CELIAN_JULIE\MonthApart\Stitched';%%'H:\MatchingUnits\Output\MonthApartStitched'% 'H:\MatchingUnits\Output\NotConcatenated';%'\\znas.cortexlab.net\Lab\Share\Celian\UnitMatch\MatchTables\NewSep27\MonthApart\Stitched'% %%;% %'H:\MatchingUnits\Output\ManyRecordings'%Folder where to store the results
-tmpdatafolder = 'H:\MatchingUnits\Tmp'; % temporary folder for temporary decompression of data 
-KilosortDir = 'H:\MatchingUnits\KilosortOutput'; % '\\znas.cortexlab.net\Lab\Share\Enny\UnitMatch\KSComparisonSubset';%'\\znas.cortexlab.net\Lab\Share\Enny\UnitMatch\KilosortOutputMonthApart';%'H:\MatchingUnits\KilosortOutputMonthApart';%'\\znas.cortexlab.net\Lab\Share\Celian\UnitMatch\KilosortOutputMonthApart';% Kilosort output folder
-GithubDir = 'C:\Users\EnnyB\Documents\GitHub'; % Github directory
+DataDir = {'Z:\Data\HMC3\day4\day4.dat', 'Z:\Data\HMC3\day5\day5.dat'}; %{'H:\MatchingUnits\RawDataMonthApart'};% ;%Raw data folders, typically servers were e.g. *.cbin files are stored
+SaveDir = 'Z:\Data\HMC3\test_unit_match'; %'\\znas.cortexlab.net\Lab\Share\UNITMATCHTABLES_ENNY_CELIAN_JULIE\2ConsecutiveDays\Stitched';%'\\znas.cortexlab.net\Lab\Share\UNITMATCHTABLES_ENNY_CELIAN_JULIE\MonthApart\Stitched';%%'H:\MatchingUnits\Output\MonthApartStitched'% 'H:\MatchingUnits\Output\NotConcatenated';%'\\znas.cortexlab.net\Lab\Share\Celian\UnitMatch\MatchTables\NewSep27\MonthApart\Stitched'% %%;% %'H:\MatchingUnits\Output\ManyRecordings'%Folder where to store the results
+tmpdatafolder = 'Z:\Data\HMC3\test_unit_match\Tmp'; % temporary folder for temporary decompression of data 
+KilosortDir = {'Z:\Data\HMC3\day4\Kilosort_2023-07-28_220442', 'Z:\Data\HMC3\day5\Kilosort_2023-07-29_100711'} % '\\znas.cortexlab.net\Lab\Share\Enny\UnitMatch\KSComparisonSubset';%'\\znas.cortexlab.net\Lab\Share\Enny\UnitMatch\KilosortOutputMonthApart';%'H:\MatchingUnits\KilosortOutputMonthApart';%'\\znas.cortexlab.net\Lab\Share\Celian\UnitMatch\KilosortOutputMonthApart';% Kilosort output folder
+GithubDir = 'D:\github\'; % Github directory
 PythonEXE = 'C:\Users\EnnyB\anaconda3\envs\pyks2\pythonw.exe' % Python version to run python code in:
 
 %% Information on experiments
-MiceOpt = {'AL032','AV008','CB016','EB019','JF067'}; %'AL032', Add all mice you want to analyze
+MiceOpt = {'HMC3'}; %'AL032', Add all mice you want to analyze
 DataDir2Use = repmat(1,[1,length(MiceOpt)]); % In case you have multiple DataDir, index which directory is used for each mouse
 RecordingType = repmat({'Chronic'},1,length(MiceOpt)); % And whether recordings were Chronic (default)
 RecordingType(ismember(MiceOpt,{''}))={'Acute'}; %EB014', % Or maybe acute?
 
 %% Parameters on how to prepare units/data for analysis
-PipelineParams.RunPyKSChronicStitched = 1; % Default 0. if 1, run PyKS chronic recordings stitched when same IMRO table was used
+PipelineParams.RunPyKSChronicStitched = 0; % Default 0. if 1, run PyKS chronic recordings stitched when same IMRO table was used
 PipelineParams.CopyToTmpFirst = 1; % If 1, copy data to local first, don't run from server (= advised!)
-PipelineParams.DecompressLocal = 1; % If 1, uncompress data first if it's currently compressed (= necessary for unitmatch and faster for QualityMetrics)
+PipelineParams.DecompressLocal = 0; % If 1, uncompress data first if it's currently compressed (= necessary for unitmatch and faster for QualityMetrics)
 
 % Storing preprocessed data?
-PipelineParams.ReLoadAlways = 0; % If 1, SP & Clusinfo are always loaded from KS output
+PipelineParams.ReLoadAlways = 1; % If 1, SP & Clusinfo are always loaded from KS output
 PipelineParams.saveSp = 1; % Save SP struct for easy loading of preprocessed data
 PipelineParams.binsz = 0.01; %Bin size for PSTHs in seconds
 
 % Quality Metrics
 PipelineParams.RunQualityMetrics = 1; % If 1, Run the quality metrics (Bombcell @JulieFabre)
 PipelineParams.RedoQM = 0; %if 1, redo quality metrics if it already exists
-PipelineParams.InspectQualityMetrics = 0; % If 1, Inspect the quality matrix/data set using the GUI (manual inspection)
+PipelineParams.InspectQualityMetrics = 1; % If 1, Inspect the quality matrix/data set using the GUI (manual inspection)
 PipelineParams.loadPCs = 0; % Only necessary when computiong isoluation metrics/drift in QM. You save a lot of time keeping this at 0
 
 % UnitMatch
