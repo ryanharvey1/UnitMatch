@@ -15,9 +15,19 @@ disp('Loading spike information...')
 nKSFiles = length(param.KSDir);
 sp = cell(1,nKSFiles);
 for did = 1:nKSFiles
-    tmp = matfile(fullfile(param.KSDir{did},'PreparedData.mat'));
-    sptmp = tmp.sp;
-    clear tmp
+    basepath = param.KSDir{did};
+    load(fullfile(basepath,[basenameFromBasepath(basepath),'.spikes.cellinfo.mat']),'spikes')
+    sptmp.st = spikes.spindices(:,1);
+    sptmp.RecSes = ones(length(spikes.spindices(:,1)),1) * did;
+    sptmp.spikeTemplates = spikes.spindices(:,2);
+    [~,idx] = sort(vertcat(spikes.times{:}));
+    amplitudes = vertcat(spikes.amplitudes{:});
+    sptmp.spikeAmps = amplitudes(idx);
+    
+    clear spikes
+    % tmp = matfile(fullfile(param.KSDir{did},'PreparedData.mat'));
+    % sptmp = tmp.sp;
+    % clear tmp
 
     % Only keep parameters used
     sp{did}.st = sptmp.st;
