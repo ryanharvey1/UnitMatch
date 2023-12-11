@@ -156,18 +156,9 @@ for subsesid = 1:length(KiloSortPaths)
     end
  
     %% Is it correct channelpos though...? Check using raw data. While reading this information, also extract recording duration and Serial number of probe
-    if ~isempty(rawD)
-        [channelpostmpconv, probeSN, recordingduration] = ChannelIMROConversion(rawD(1).folder, 0); % For conversion when not automatically done
-        if recordingduration<Params.MinRecordingDuration
-            disp([KiloSortPaths{subsesid} ' recording too short, skip...'])
-            continue
-        end
-        AllChannelPos{subsesid} = channelpostmpconv;
-        AllProbeSN{subsesid} = probeSN;
-    else
-        AllChannelPos{subsesid} = channelpostmp;
-        AllProbeSN{subsesid} = '000000';
-    end
+    channelpostmpconv = channelpostmp;
+    AllChannelPos{subsesid} = channelpostmpconv;
+    AllProbeSN{subsesid} = '000000';
     
     %% Load existing?
     if exist(fullfile(KiloSortPaths{subsesid}, 'PreparedData.mat')) && ~Params.RedoQM && ~Params.ReLoadAlways
@@ -183,7 +174,6 @@ for subsesid = 1:length(KiloSortPaths)
         end
     end
 
-   
     
     %% Load histology if available
     tmphisto = dir(fullfile(KiloSortPaths{subsesid}, 'HistoEphysAlignment.mat'));
@@ -210,6 +200,11 @@ for subsesid = 1:length(KiloSortPaths)
     %% Bombcell parameters
     % clear paramBC
     paramBC = bc_qualityParamValuesForUnitMatch(dir(strrep(fullfile(rawD(1).folder, rawD(1).name), 'cbin', 'meta')), fullfile(Params.tmpdatafolder, strrep(rawD(1).name, 'cbin', 'bin')));
+    load(fullfile(rawD(1).folder,[basenameFromBasepath(rawD(1).folder),'.session.mat']),'session')
+
+    paramBC.nChannels = session.extracellular.nChannels;
+    paramBC.nSyncChannels = 0;
+    paramBC.ephys_sample_rate = session.extracellular.sr;
 
     %% Load Cluster Info
     myClusFile = dir(fullfile(KiloSortPaths{subsesid}, 'cluster_info.tsv')); % If you did phy (manual curation) we will find this one... We can trust you, right?
@@ -266,6 +261,7 @@ for subsesid = 1:length(KiloSortPaths)
         CurationDone = 1;
         save(fullfile(KiloSortPaths{subsesid}, 'CuratedResults.mat'), 'CurationDone')
         clusinfo = tdfread(fullfile(myClusFile(1).folder, myClusFile(1).name));
+        clusinfo.group = cellstr(clusinfo.group);
         % Convert sp data to correct cluster according to phy (clu and
         % template are not necessarily the same after  splitting/merging)
         [clusinfo, sp, emptyclus] = RemovingEmptyClusters(clusinfo, sp);
@@ -282,8 +278,7 @@ for subsesid = 1:length(KiloSortPaths)
             keyboard
             disp('Someone thought it was nice to change the name again...')
         end
-        KSLabel = clusinfo.KSLabel;
-        Label = [Label, clusinfo.group]; % You want the group, not the KSLABEL!
+        Label = [Label, clusinfo.group];
         % Find depth and channel
         depthtmp = nan(length(clusidtmp), 1);
         xtmp = nan(length(clusidtmp), 1);
@@ -355,55 +350,17 @@ for subsesid = 1:length(KiloSortPaths)
 
             InspectionFlag = 0;
             rerunEx = false;
-            if isempty(dir(fullfile(savePath, '**', 'RawWaveforms'))) || rerunEx  % if raw waveforms have not been extract, decompress data for extraction
-                disp('Extracting sync file...')
-                % detect whether data is compressed, decompress locally if necessary
-                if ~exist(fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin')))
-                    disp('This is compressed data and we do not want to use Python integration... uncompress temporarily')
-                    decompDataFile = bc_extractCbinData(fullfile(rawD(id).folder, rawD(id).name), ...
-                        [], [], 0, fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin')));
-                    statusCopy = copyfile(strrep(fullfile(rawD(id).folder, rawD(id).name), 'cbin', 'meta'), strrep(fullfile(Params.tmpdatafolder, rawD(id).name), 'cbin', 'meta')); %QQ doesn't work on linux
-                end
-                Params.DecompressionFlag = 1;
-                if ~exist('statusCopy','var') ||statusCopy == 0 %could not copy meta file - use original meta file
-                    [Imecmeta] = ReadMeta2(fullfile(rawD(id).folder, strrep(rawD(id).name, 'cbin', 'meta')), 'ap');
-                else
-                    [Imecmeta] = ReadMeta2(fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'meta')), 'ap');
-                end
-                nchan = strsplit(Imecmeta.acqApLfSy, ',');
-                nChansInFile = str2num(nchan{1}) + str2num(nchan{3});
-
-                syncDatImec = extractSyncChannel(fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin')), nChansInFile, nChansInFile); %Last channel is sync
-                statusCopy = copyfile(fullfile(Params.tmpdatafolder, strrep(rawD(id).name, '.cbin', '_sync.dat')), fullfile(rawD(id).folder, strrep(rawD(id).name, '.cbin', '_sync.dat'))); %QQ doesn't work on linux
-
-            end
             if ~qMetricsExist || Params.RedoQM
-                % First check if we want to use python for compressed data. If not, uncompress data first
-                if any(strfind(rawD(id).name, 'cbin')) && Params.DecompressLocal
-                    % detect whether data is compressed, decompress locally if necessary
-                    if ~exist(fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin')))
-                        disp('This is compressed data and we do not want to use Python integration... uncompress temporarily')
-                        decompDataFile = bc_extractCbinData(fullfile(rawD(id).folder, rawD(id).name), ...
-                            [], [], 0, fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin')));
-                        statusCopy = copyfile(strrep(fullfile(rawD(id).folder, rawD(id).name), 'cbin', 'meta'), strrep(fullfile(Params.tmpdatafolder, rawD(id).name), 'cbin', 'meta')); %QQ doesn't work on linux
-                    end
 
-                    Params.DecompressionFlag = 1;
-                    if Params.InspectQualityMetrics
-                        InspectionFlag = 1;
-                    end
-                end
-
-                paramBC.rawFile = fullfile(Params.tmpdatafolder, strrep(rawD(id).name, 'cbin', 'bin'));
                 paramBC.ephysMetaFile = (strrep(fullfile(rawD(id).folder, rawD(id).name), 'cbin', 'meta'));
 
-                %             idx = ismember(sp.spikeTemplates,clusidtmp(Good_IDtmp)); %Only include good units
                 %careful; spikeSites zero indexed
                 if isempty(sp.pcFeat)
                     spfeat = [];
                 else
                     spfeat = sp.pcFeat(idx, :, :);
                 end
+                paramBC.rawFile = strrep(fullfile(rawD(id).folder, rawD(id).name), 'cbin', 'meta');
                 [qMetric, unitType] = bc_runAllQualityMetrics(paramBC, sp.st(idx)*sp.sample_rate, sp.spikeTemplates(idx)+1, ...
                     templateWaveforms, sp.tempScalingAmps(idx), spfeat, sp.pcFeatInd+1, channelpostmp, savePath); % Be careful, bombcell needs 1-indexed!
 
@@ -431,7 +388,6 @@ for subsesid = 1:length(KiloSortPaths)
                     disp(ME)
                 end
 
-                %                 load(fullfile(savePath, 'qMetric.mat'))
             end
             theseuniqueTemplates{id} = unique(sp.spikeTemplates);
             qMetricclusterID = qMetric.clusterID;
